@@ -1,0 +1,216 @@
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/assets/fonts/SpaceGrotesk[wght].woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/assets/fonts/JetBrainsMono[wght].woff2") format("woff2");
+  font-weight: 400 600;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.375rem;
+
+    /* Light mode (unused - app is dark-only) */
+    --background: 0.12 0.005 240;
+    --foreground: 0.95 0.01 240;
+    --card: 0.16 0.008 240;
+    --card-foreground: 0.95 0.01 240;
+    --popover: 0.18 0.008 240;
+    --popover-foreground: 0.95 0.01 240;
+    --primary: 0.78 0.18 55;
+    --primary-foreground: 0.1 0.005 240;
+    --secondary: 0.22 0.01 240;
+    --secondary-foreground: 0.85 0.01 240;
+    --muted: 0.2 0.008 240;
+    --muted-foreground: 0.55 0.01 240;
+    --accent: 0.65 0.2 145;
+    --accent-foreground: 0.1 0.005 240;
+    --destructive: 0.62 0.22 25;
+    --destructive-foreground: 0.98 0 0;
+    --border: 0.28 0.01 240;
+    --input: 0.22 0.01 240;
+    --ring: 0.78 0.18 55;
+    --chart-1: 0.78 0.18 55;
+    --chart-2: 0.65 0.2 145;
+    --chart-3: 0.62 0.22 25;
+    --chart-4: 0.72 0.15 200;
+    --chart-5: 0.55 0.18 300;
+    --sidebar: 0.14 0.006 240;
+    --sidebar-foreground: 0.95 0.01 240;
+    --sidebar-primary: 0.78 0.18 55;
+    --sidebar-primary-foreground: 0.1 0.005 240;
+    --sidebar-accent: 0.22 0.01 240;
+    --sidebar-accent-foreground: 0.85 0.01 240;
+    --sidebar-border: 0.28 0.01 240;
+    --sidebar-ring: 0.78 0.18 55;
+  }
+
+  .dark {
+    --background: 0.1 0.005 240;
+    --foreground: 0.95 0.01 240;
+    --card: 0.14 0.007 240;
+    --card-foreground: 0.95 0.01 240;
+    --popover: 0.16 0.008 240;
+    --popover-foreground: 0.95 0.01 240;
+    --primary: 0.78 0.18 55;
+    --primary-foreground: 0.1 0.005 240;
+    --secondary: 0.2 0.01 240;
+    --secondary-foreground: 0.85 0.01 240;
+    --muted: 0.18 0.008 240;
+    --muted-foreground: 0.55 0.01 240;
+    --accent: 0.65 0.2 145;
+    --accent-foreground: 0.1 0.005 240;
+    --destructive: 0.62 0.22 25;
+    --destructive-foreground: 0.98 0 0;
+    --border: 0.25 0.01 240;
+    --input: 0.2 0.01 240;
+    --ring: 0.78 0.18 55;
+    --chart-1: 0.78 0.18 55;
+    --chart-2: 0.65 0.2 145;
+    --chart-3: 0.62 0.22 25;
+    --chart-4: 0.72 0.15 200;
+    --chart-5: 0.55 0.18 300;
+    --sidebar: 0.12 0.006 240;
+    --sidebar-foreground: 0.95 0.01 240;
+    --sidebar-primary: 0.78 0.18 55;
+    --sidebar-primary-foreground: 0.1 0.005 240;
+    --sidebar-accent: 0.2 0.01 240;
+    --sidebar-accent-foreground: 0.85 0.01 240;
+    --sidebar-border: 0.25 0.01 240;
+    --sidebar-ring: 0.78 0.18 55;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  /* Prevent text cursor AND caret on all non-editable elements */
+  *:not(input):not(textarea):not([contenteditable="true"]):not(select) {
+    cursor: default !important;
+    /* Prevent blinking text caret when clicking static elements */
+    caret-color: transparent !important;
+  }
+
+  /* Prevent text selection / blinking caret on static elements */
+  p,
+  span,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  div:not([role="button"]):not([role="link"]):not([role="textbox"]),
+  [data-radix-select-trigger],
+  [data-radix-collapsible-trigger],
+  li,
+  td,
+  th,
+  label {
+    cursor: default !important;
+    user-select: none;
+    caret-color: transparent !important;
+  }
+
+  /* Interactive elements should have pointer cursor */
+  a,
+  button,
+  [role="button"],
+  [role="link"],
+  [role="menuitem"],
+  [role="option"],
+  [role="tab"],
+  select,
+  label[for],
+  [tabindex]:not([tabindex="-1"]) {
+    cursor: pointer !important;
+    user-select: none;
+  }
+
+  /* Editable elements get normal text cursor and caret */
+  input,
+  textarea,
+  [contenteditable="true"],
+  [role="textbox"],
+  [role="searchbox"] {
+    cursor: text !important;
+    user-select: text !important;
+    caret-color: auto !important;
+  }
+
+  html {
+    @apply dark;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image: url("/assets/generated/bg-texture.dim_1920x1080.png");
+    background-size: cover;
+    background-attachment: fixed;
+    background-position: center;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: oklch(var(--background));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(var(--border));
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(var(--muted-foreground) / 0.5);
+  }
+
+  /* Fancy nav scrollbar */
+  nav::-webkit-scrollbar {
+    height: 3px;
+  }
+  nav::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  nav::-webkit-scrollbar-thumb {
+    background: oklch(var(--primary) / 0.4);
+    border-radius: 9999px;
+  }
+  nav::-webkit-scrollbar-thumb:hover {
+    background: oklch(var(--primary) / 0.7);
+  }
+}
+
+@layer components {
+  .status-not-started {
+    @apply text-muted-foreground bg-muted/50 border border-border;
+  }
+  .status-in-progress {
+    @apply text-amber-400 bg-amber-400/10 border border-amber-400/30;
+  }
+  .status-done {
+    @apply text-emerald-400 bg-emerald-400/10 border border-emerald-400/30;
+  }
+  .subject-physics {
+    @apply text-sky-400 bg-sky-400/10 border border-sky-400/30;
+  }
+  .subject-chemistry {
+    @apply text-violet-400 bg-violet-400/10 border border-violet-400/30;
+  }
+  .subject-maths {
+    @apply text-amber-400 bg-amber-400/10 border border-amber-400/30;
+  }
+  .subject-general {
+    @apply text-slate-400 bg-slate-400/10 border border-slate-400/30;
+  }
+}
