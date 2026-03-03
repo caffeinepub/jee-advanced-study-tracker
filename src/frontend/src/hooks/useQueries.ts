@@ -146,13 +146,17 @@ export function useGetCallerUserProfile() {
       return actor.getCallerUserProfile();
     },
     enabled: !!actor && !actorFetching,
-    retry: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   return {
     ...query,
-    isLoading: actorFetching || query.isLoading,
-    isFetched: !!actor && query.isFetched,
+    // isLoading is true only while the actor is fetching AND query hasn't resolved
+    isLoading:
+      (actorFetching && !query.isFetched) || (!!actor && query.isLoading),
+    // isFetched: true once the query has settled (success or error), regardless of actor state
+    isFetched: query.isFetched || query.isError,
   };
 }
 

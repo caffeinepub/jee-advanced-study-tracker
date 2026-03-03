@@ -6,7 +6,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
-import type React from "react";
+import React from "react";
 import Layout from "./components/Layout";
 import { RealityModeProvider } from "./contexts/RealityModeContext";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
@@ -28,11 +28,27 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     data: userProfile,
     isLoading: profileLoading,
     isFetched,
+    isError: profileError,
   } = useGetCallerUserProfile();
+
+  // Timeout fallback: if still loading after 8 seconds, proceed anyway
+  const [loadingTimedOut, setLoadingTimedOut] = React.useState(false);
+  React.useEffect(() => {
+    if (!profileLoading) {
+      setLoadingTimedOut(false);
+      return;
+    }
+    const t = setTimeout(() => setLoadingTimedOut(true), 8000);
+    return () => clearTimeout(t);
+  }, [profileLoading]);
 
   const isAuthenticated = !!identity;
   const showProfileSetup =
-    isAuthenticated && !profileLoading && isFetched && userProfile === null;
+    isAuthenticated &&
+    !profileLoading &&
+    isFetched &&
+    userProfile === null &&
+    !profileError;
 
   if (isInitializing) {
     return (
@@ -53,7 +69,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return <ProfileSetupPage onComplete={() => {}} />;
   }
 
-  if (profileLoading && !isFetched) {
+  // Show loading only briefly — if timed out or errored, proceed to app
+  if (profileLoading && !isFetched && !loadingTimedOut && !profileError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
