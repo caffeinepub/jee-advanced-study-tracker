@@ -256,6 +256,7 @@ export function useGetChaptersByResource(resourceId: string) {
       return actor.getChaptersByResource(resourceId);
     },
     enabled: !!actor && !isFetching && !!resourceId,
+    staleTime: 1000 * 60 * 5,
   });
 }
 
@@ -307,7 +308,70 @@ export function useUpdateChapterQuestions() {
         params.totalQuestions,
       );
     },
-    onSuccess: (_data, variables) => {
+    onMutate: async (variables) => {
+      // Cancel outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({
+        queryKey: ["chapters", variables.resourceId],
+      });
+      await queryClient.cancelQueries({ queryKey: ["chapters", "all"] });
+
+      // Snapshot previous values for rollback
+      const previousByResource = queryClient.getQueryData<Chapter[]>([
+        "chapters",
+        variables.resourceId,
+      ]);
+      const previousAll = queryClient.getQueryData<Chapter[]>([
+        "chapters",
+        "all",
+      ]);
+
+      // Apply optimistic update to per-resource cache
+      if (previousByResource) {
+        queryClient.setQueryData<Chapter[]>(
+          ["chapters", variables.resourceId],
+          previousByResource.map((ch) =>
+            ch.id === variables.chapterId
+              ? {
+                  ...ch,
+                  doneQuestions: variables.doneQuestions,
+                  totalQuestions: variables.totalQuestions,
+                }
+              : ch,
+          ),
+        );
+      }
+
+      // Apply optimistic update to all-chapters cache
+      if (previousAll) {
+        queryClient.setQueryData<Chapter[]>(
+          ["chapters", "all"],
+          previousAll.map((ch) =>
+            ch.id === variables.chapterId
+              ? {
+                  ...ch,
+                  doneQuestions: variables.doneQuestions,
+                  totalQuestions: variables.totalQuestions,
+                }
+              : ch,
+          ),
+        );
+      }
+
+      return { previousByResource, previousAll };
+    },
+    onError: (_err, variables, context) => {
+      // Roll back on error
+      if (context?.previousByResource !== undefined) {
+        queryClient.setQueryData(
+          ["chapters", variables.resourceId],
+          context.previousByResource,
+        );
+      }
+      if (context?.previousAll !== undefined) {
+        queryClient.setQueryData(["chapters", "all"], context.previousAll);
+      }
+    },
+    onSettled: (_data, _err, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["chapters", variables.resourceId],
       });
@@ -329,7 +393,66 @@ export function useUpdateChapterStatus() {
       if (!actor) throw new Error("Actor not available");
       return actor.updateChapterStatus(params.chapterId, params.status);
     },
-    onSuccess: (_data, variables) => {
+    onMutate: async (variables) => {
+      // Cancel outgoing refetches
+      if (variables.resourceId) {
+        await queryClient.cancelQueries({
+          queryKey: ["chapters", variables.resourceId],
+        });
+      }
+      await queryClient.cancelQueries({ queryKey: ["chapters", "all"] });
+
+      // Snapshot previous values for rollback
+      const previousByResource = variables.resourceId
+        ? queryClient.getQueryData<Chapter[]>([
+            "chapters",
+            variables.resourceId,
+          ])
+        : undefined;
+      const previousAll = queryClient.getQueryData<Chapter[]>([
+        "chapters",
+        "all",
+      ]);
+
+      // Apply optimistic update to per-resource cache
+      if (previousByResource && variables.resourceId) {
+        queryClient.setQueryData<Chapter[]>(
+          ["chapters", variables.resourceId],
+          previousByResource.map((ch) =>
+            ch.id === variables.chapterId
+              ? { ...ch, status: variables.status }
+              : ch,
+          ),
+        );
+      }
+
+      // Apply optimistic update to all-chapters cache
+      if (previousAll) {
+        queryClient.setQueryData<Chapter[]>(
+          ["chapters", "all"],
+          previousAll.map((ch) =>
+            ch.id === variables.chapterId
+              ? { ...ch, status: variables.status }
+              : ch,
+          ),
+        );
+      }
+
+      return { previousByResource, previousAll };
+    },
+    onError: (_err, variables, context) => {
+      // Roll back on error
+      if (context?.previousByResource !== undefined && variables.resourceId) {
+        queryClient.setQueryData(
+          ["chapters", variables.resourceId],
+          context.previousByResource,
+        );
+      }
+      if (context?.previousAll !== undefined) {
+        queryClient.setQueryData(["chapters", "all"], context.previousAll);
+      }
+    },
+    onSettled: (_data, _err, variables) => {
       if (variables.resourceId) {
         queryClient.invalidateQueries({
           queryKey: ["chapters", variables.resourceId],
@@ -516,6 +639,7 @@ export function useGetDueForRevision() {
       return actor.getDueForRevision();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 1000 * 60 * 2, // 2 min — changes based on real time
   });
 }
 
@@ -589,6 +713,7 @@ export function useGetTodayLeaderboard() {
     },
     enabled: !!actor && !isFetching,
     refetchInterval: 30_000,
+    staleTime: 0, // always re-fetch when switching to timer page — data must be fresh
   });
 }
 
@@ -602,6 +727,7 @@ export function useGetMyTodaySeconds() {
       return actor.getMyTodaySeconds();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 0, // timer data must always be fresh
   });
 }
 
