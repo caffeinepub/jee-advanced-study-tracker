@@ -189,6 +189,14 @@
   nav::-webkit-scrollbar-thumb:hover {
     background: oklch(var(--primary) / 0.7);
   }
+
+  /* Hide main page scrollbar but keep scrolling */
+  main::-webkit-scrollbar {
+    display: none;
+  }
+  main {
+    scrollbar-width: none;
+  }
 }
 
 @layer components {

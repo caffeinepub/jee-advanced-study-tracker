@@ -454,6 +454,7 @@ interface EventBlockProps {
   width: number; // 0..1 fraction
   onEdit: (event: PlannerEvent) => void;
   onDragStart: (event: PlannerEvent) => void;
+  onTouchDragStart: (event: PlannerEvent, touch: React.Touch) => void;
 }
 
 function EventBlock({
@@ -462,6 +463,7 @@ function EventBlock({
   width,
   onEdit,
   onDragStart,
+  onTouchDragStart,
 }: EventBlockProps) {
   const cfg = SUBJECT_CONFIG[event.subject];
   const topPx = ((event.startMinutes - DAY_START) / 15) * SLOT_HEIGHT;
@@ -475,16 +477,24 @@ function EventBlock({
     onDragStart(event);
   };
 
-  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const touchMoveStarted = useRef(false);
 
-  const handlePointerDown = () => {
-    longPressRef.current = setTimeout(() => setIsDragging(true), 400);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchMoveStarted.current = false;
+    onTouchDragStart(event, e.touches[0]);
   };
 
-  const handlePointerUp = () => {
-    if (longPressRef.current) clearTimeout(longPressRef.current);
-    setIsDragging(false);
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchMoveStarted.current = true;
+    // Prevent page scroll while dragging a block
+    e.stopPropagation();
+  };
+
+  const handleClick = () => {
+    // Don't open edit dialog if user was touch-dragging
+    if (!touchMoveStarted.current) {
+      onEdit(event);
+    }
   };
 
   return (
@@ -492,10 +502,9 @@ function EventBlock({
       type="button"
       draggable
       onDragStart={handleDragStart}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-      onClick={() => onEdit(event)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onClick={handleClick}
       onKeyDown={(e) => e.key === "Enter" && onEdit(event)}
       style={{
         top: `${topPx}px`,
@@ -503,11 +512,11 @@ function EventBlock({
         left: `calc(${left * 100}% + 2px)`,
         width: `calc(${width * 100}% - 4px)`,
         zIndex: 10,
+        touchAction: "none",
       }}
       className={`
         absolute rounded-md border px-1.5 py-0.5 overflow-hidden
         ${cfg.bg} ${cfg.border} ${cfg.text}
-        ${isDragging ? "opacity-50 scale-95" : "opacity-100"}
         hover:brightness-110 active:scale-[0.98]
         transition-all select-none
       `}
@@ -573,6 +582,7 @@ interface DayColumnProps {
   onDragOver: (date: string, slot: number) => void;
   onDragLeave: () => void;
   onDrop: (date: string, startMinutes: number) => void;
+  onTouchDragStart: (event: PlannerEvent, touch: React.Touch) => void;
   showTimeAxis: boolean;
 }
 
@@ -588,6 +598,7 @@ function DayColumn({
   onDragOver,
   onDragLeave,
   onDrop,
+  onTouchDragStart,
   showTimeAxis,
 }: DayColumnProps) {
   const gridRef = useRef<HTMLDivElement>(null);
@@ -629,6 +640,27 @@ function DayColumn({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const startMinutes = getSlotFromY(e.clientY);
+    onDrop(date, startMinutes);
+  };
+
+  // Touch drag: non-passive touchmove so we can call preventDefault and prevent scroll
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || !draggingEvent) return;
+    const handler = (e: TouchEvent) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const slot = getSlotFromY(touch.clientY);
+      onDragOver(date, slot);
+    };
+    el.addEventListener("touchmove", handler, { passive: false });
+    return () => el.removeEventListener("touchmove", handler);
+  }, [draggingEvent, date, getSlotFromY, onDragOver]);
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!draggingEvent) return;
+    const touch = e.changedTouches[0];
+    const startMinutes = getSlotFromY(touch.clientY);
     onDrop(date, startMinutes);
   };
 
@@ -713,6 +745,7 @@ function DayColumn({
           onDragOver={handleDragOver}
           onDragLeave={onDragLeave}
           onDrop={handleDrop}
+          onTouchEnd={handleTouchEnd}
           data-ocid="planner.day.canvas_target"
         >
           {/* Hour lines */}
@@ -778,6 +811,7 @@ function DayColumn({
               width={width}
               onEdit={onEditEvent}
               onDragStart={onDragStart}
+              onTouchDragStart={onTouchDragStart}
             />
           ))}
         </div>
@@ -1126,6 +1160,13 @@ export default function PlannerPage() {
     setDraggingEvent(event);
   };
 
+  const handleTouchDragStart = useCallback(
+    (event: PlannerEvent, _touch: React.Touch) => {
+      setDraggingEvent(event);
+    },
+    [],
+  );
+
   const handleDragOverDay = (date: string, slot: number) => {
     setDragOverDate(date);
     setDropHighlight({ date, slot });
@@ -1372,7 +1413,10 @@ export default function PlannerPage() {
         >
           <div className="rounded-xl border border-border bg-card">
             {/* Horizontally scrollable, vertically extends with page */}
-            <div className="overflow-x-auto" style={{ overflowY: "visible" }}>
+            <div
+              className="overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
+              style={{ overflowY: "visible" }}
+            >
               <div
                 className="flex min-w-0"
                 style={{
@@ -1395,6 +1439,7 @@ export default function PlannerPage() {
                     onDragOver={handleDragOverDay}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDropInDay}
+                    onTouchDragStart={handleTouchDragStart}
                     showTimeAxis={idx === 0}
                   />
                 ))}

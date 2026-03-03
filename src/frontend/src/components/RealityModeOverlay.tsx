@@ -1,18 +1,63 @@
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, X } from "lucide-react";
 import React from "react";
+import type { Chapter, Resource } from "../backend";
 import { useRealityMode } from "../contexts/RealityModeContext";
-import { useGetAllChapters } from "../hooks/useQueries";
+import { useGetAllChapters, useGetResources } from "../hooks/useQueries";
 
 const JEE_DATE_KEY = "jee_exam_date";
-const DEFAULT_JEE_DATE = "2026-05-25";
+const DEFAULT_JEE_DATE = "2026-05-17";
 
 function getDaysRemaining(): number {
   const stored = localStorage.getItem(JEE_DATE_KEY);
-  const examDate = new Date(stored || DEFAULT_JEE_DATE);
+  const dateStr = stored || DEFAULT_JEE_DATE;
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const examDate = new Date(year, month - 1, day); // local midnight, no UTC offset issue
   const now = new Date();
-  const diff = examDate.getTime() - now.getTime();
+  const todayMidnight = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  const diff = examDate.getTime() - todayMidnight.getTime();
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+}
+
+function deduplicateSubjectChapters(
+  subject: string,
+  resources: Resource[],
+  chapters: Chapter[],
+) {
+  const subjectResourceIds = new Set(
+    resources.filter((r) => r.subject === subject).map((r) => r.id),
+  );
+  const subjectChapters = chapters.filter((c) =>
+    subjectResourceIds.has(c.resourceId),
+  );
+  const byName = new Map<string, Chapter[]>();
+  for (const ch of subjectChapters) {
+    const existing = byName.get(ch.name) || [];
+    existing.push(ch);
+    byName.set(ch.name, existing);
+  }
+  const total = byName.size;
+  let done = 0;
+  let inProgress = 0;
+  let notStarted = 0;
+  for (const instances of byName.values()) {
+    if (instances.every((c) => c.status === "Done")) {
+      done += 1;
+    } else if (
+      instances.some(
+        (c) => c.status === "In Progress" || c.status === "Currently Doing",
+      )
+    ) {
+      inProgress += 1;
+    } else {
+      notStarted += 1;
+    }
+  }
+  return { total, done, inProgress, notStarted };
 }
 
 function getBluntStatement(pct: number, days: number): string {
@@ -28,14 +73,26 @@ function getBluntStatement(pct: number, days: number): string {
 export default function RealityModeOverlay() {
   const { isRealityModeActive, setRealityMode } = useRealityMode();
   const { data: chapters = [] } = useGetAllChapters();
+  const { data: resources = [] } = useGetResources();
 
   if (!isRealityModeActive) return null;
 
   const daysRemaining = getDaysRemaining();
-  const total = chapters.length;
-  const notStarted = chapters.filter((c) => c.status === "Not Started").length;
-  const inProgress = chapters.filter((c) => c.status === "In Progress").length;
-  const done = chapters.filter((c) => c.status === "Done").length;
+
+  // Use the same deduplication as the dashboard so counts match
+  const subjects = ["Physics", "Chemistry", "Maths"] as const;
+  let total = 0;
+  let done = 0;
+  let inProgress = 0;
+  let notStarted = 0;
+  for (const subject of subjects) {
+    const s = deduplicateSubjectChapters(subject, resources, chapters);
+    total += s.total;
+    done += s.done;
+    inProgress += s.inProgress;
+    notStarted += s.notStarted;
+  }
+
   const completionPct = total > 0 ? Math.round((done / total) * 100) : 0;
   const statement = getBluntStatement(completionPct, daysRemaining);
 

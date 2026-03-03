@@ -606,6 +606,19 @@ function DashboardDayPlanner() {
     return DAY_START + Math.max(0, Math.min(idx, TOTAL_SLOTS - 1)) * 15;
   }, []);
 
+  // Non-passive touchmove listener so we can preventDefault and stop page scroll while dragging
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || !dragging) return;
+    const handler = (e: TouchEvent) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      setDropSlot(getSlot(touch.clientY));
+    };
+    el.addEventListener("touchmove", handler, { passive: false });
+    return () => el.removeEventListener("touchmove", handler);
+  }, [dragging, getSlot]);
+
   const handleGridClick = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("[data-planner-event]")) return;
     const start = getSlot(e.clientY);
@@ -627,6 +640,24 @@ function DashboardDayPlanner() {
     e.preventDefault();
     if (!dragging) return;
     const newStart = getSlot(e.clientY);
+    const dur = dragging.endMinutes - dragging.startMinutes;
+    const clampedStart = Math.max(DAY_START, Math.min(newStart, DAY_END - 15));
+    const newEnd = Math.min(clampedStart + dur, DAY_END);
+    setEvents((prev) =>
+      prev.map((ev) =>
+        ev.id === dragging.id
+          ? { ...ev, startMinutes: clampedStart, endMinutes: newEnd }
+          : ev,
+      ),
+    );
+    setDragging(null);
+    setDropSlot(null);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!dragging) return;
+    const touch = e.changedTouches[0];
+    const newStart = getSlot(touch.clientY);
     const dur = dragging.endMinutes - dragging.startMinutes;
     const clampedStart = Math.max(DAY_START, Math.min(newStart, DAY_END - 15));
     const newEnd = Math.min(clampedStart + dur, DAY_END);
@@ -826,146 +857,156 @@ function DashboardDayPlanner() {
       )}
 
       {/* Day grid */}
-      <div className="flex" style={{ overflowX: "auto" }}>
-        {/* Time axis */}
-        <div className="shrink-0 w-12 flex flex-col border-r border-border/30">
-          <div
-            style={{ height: `${HEADER_HEIGHT}px`, flexShrink: 0 }}
-            className="border-b border-border/60"
-          />
-          <div className="relative" style={{ height: `${totalHeight}px` }}>
-            {hourLabels.map((m) => (
-              <div
-                key={m}
-                className="absolute right-1 text-[9px] font-mono text-muted-foreground/70 -translate-y-1/2 leading-none"
-                style={{ top: `${(m / 15) * SLOT_HEIGHT}px` }}
-              >
-                {m === DAY_END ? "24:00" : minToTime(m)}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Column */}
-        <div className="flex flex-col flex-1 min-w-0">
-          {/* Column header */}
-          <div
-            className="sticky top-0 z-20 flex flex-col items-center justify-center border-b border-border/60 bg-card"
-            style={{ height: `${HEADER_HEIGHT}px` }}
-          >
-            <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">
-              {new Date().toLocaleDateString("en-IN", { weekday: "short" })}
-            </span>
-            <span className="text-sm font-bold text-primary">
-              {new Date().getDate()}
-            </span>
-          </div>
-
-          {/* Grid */}
-          <div
-            ref={gridRef}
-            role="presentation"
-            className="relative cursor-pointer"
-            style={{ height: `${totalHeight}px` }}
-            onClick={handleGridClick}
-            onKeyDown={(e) =>
-              e.key === "Enter" &&
-              handleGridClick(e as unknown as React.MouseEvent)
-            }
-            onDragOver={handleDragOver}
-            onDragLeave={() => setDropSlot(null)}
-            onDrop={handleDrop}
-            data-ocid="dashboard.planner.canvas_target"
-          >
-            {/* Hour lines */}
-            {hourLabels.map((m) => (
-              <div
-                key={m}
-                className="absolute left-0 right-0 border-t border-border/25 pointer-events-none"
-                style={{ top: `${(m / 15) * SLOT_HEIGHT}px` }}
-              />
-            ))}
-
-            {/* 15-min slots */}
-            {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
-              const sm = i * 15;
-              const isDropTarget = dropSlot !== null && sm === dropSlot;
-              return (
+      <div
+        style={{ maxHeight: "480px", overflowY: "auto", overflowX: "auto" }}
+        className="[&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-amber-400/40 [&::-webkit-scrollbar-track]:bg-transparent"
+      >
+        <div className="flex" style={{ minWidth: "max-content" }}>
+          {/* Time axis */}
+          <div className="shrink-0 w-12 flex flex-col border-r border-border/30">
+            <div
+              style={{ height: `${HEADER_HEIGHT}px`, flexShrink: 0 }}
+              className="border-b border-border/60"
+            />
+            <div className="relative" style={{ height: `${totalHeight}px` }}>
+              {hourLabels.map((m) => (
                 <div
-                  key={sm}
-                  className={`absolute left-0 right-0 pointer-events-none transition-colors ${isDropTarget ? "bg-primary/20 border-t-2 border-primary/70" : ""}`}
+                  key={m}
+                  className="absolute right-1 text-[9px] font-mono text-muted-foreground/70 -translate-y-1/2 leading-none"
+                  style={{ top: `${(m / 15) * SLOT_HEIGHT}px` }}
+                >
+                  {m === DAY_END ? "24:00" : minToTime(m)}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Column */}
+          <div className="flex flex-col flex-1 min-w-0">
+            {/* Column header */}
+            <div
+              className="sticky top-0 z-20 flex flex-col items-center justify-center border-b border-border/60 bg-card"
+              style={{ height: `${HEADER_HEIGHT}px` }}
+            >
+              <span className="text-[10px] font-semibold text-primary uppercase tracking-wider">
+                {new Date().toLocaleDateString("en-IN", { weekday: "short" })}
+              </span>
+              <span className="text-sm font-bold text-primary">
+                {new Date().getDate()}
+              </span>
+            </div>
+
+            {/* Grid */}
+            <div
+              ref={gridRef}
+              role="presentation"
+              className="relative cursor-pointer"
+              style={{ height: `${totalHeight}px` }}
+              onClick={handleGridClick}
+              onKeyDown={(e) =>
+                e.key === "Enter" &&
+                handleGridClick(e as unknown as React.MouseEvent)
+              }
+              onDragOver={handleDragOver}
+              onDragLeave={() => setDropSlot(null)}
+              onDrop={handleDrop}
+              onTouchEnd={handleTouchEnd}
+              data-ocid="dashboard.planner.canvas_target"
+            >
+              {/* Hour lines */}
+              {hourLabels.map((m) => (
+                <div
+                  key={m}
+                  className="absolute left-0 right-0 border-t border-border/25 pointer-events-none"
+                  style={{ top: `${(m / 15) * SLOT_HEIGHT}px` }}
+                />
+              ))}
+
+              {/* 15-min slots */}
+              {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
+                const sm = i * 15;
+                const isDropTarget = dropSlot !== null && sm === dropSlot;
+                return (
+                  <div
+                    key={sm}
+                    className={`absolute left-0 right-0 pointer-events-none transition-colors ${isDropTarget ? "bg-primary/20 border-t-2 border-primary/70" : ""}`}
+                    style={{
+                      top: `${i * SLOT_HEIGHT}px`,
+                      height: `${SLOT_HEIGHT}px`,
+                    }}
+                  />
+                );
+              })}
+
+              {/* Drag ghost */}
+              {dragging && dropSlot !== null && (
+                <div
+                  className="absolute left-1 right-1 rounded-md border border-dashed border-primary/70 bg-primary/15 pointer-events-none z-20"
                   style={{
-                    top: `${i * SLOT_HEIGHT}px`,
-                    height: `${SLOT_HEIGHT}px`,
+                    top: `${(dropSlot / 15) * SLOT_HEIGHT}px`,
+                    height: `${Math.max(((dragging.endMinutes - dragging.startMinutes) / 15) * SLOT_HEIGHT, SLOT_HEIGHT)}px`,
                   }}
                 />
-              );
-            })}
+              )}
 
-            {/* Drag ghost */}
-            {dragging && dropSlot !== null && (
-              <div
-                className="absolute left-1 right-1 rounded-md border border-dashed border-primary/70 bg-primary/15 pointer-events-none z-20"
-                style={{
-                  top: `${(dropSlot / 15) * SLOT_HEIGHT}px`,
-                  height: `${Math.max(((dragging.endMinutes - dragging.startMinutes) / 15) * SLOT_HEIGHT, SLOT_HEIGHT)}px`,
-                }}
-              />
-            )}
-
-            {/* Events */}
-            {layoutSlots.map(({ event, left, width }) => {
-              const cfg = SUBJECT_CFG[event.subject];
-              const topPx = (event.startMinutes / 15) * SLOT_HEIGHT;
-              const heightPx = Math.max(
-                ((event.endMinutes - event.startMinutes) / 15) * SLOT_HEIGHT,
-                SLOT_HEIGHT,
-              );
-              return (
-                <div
-                  key={event.id}
-                  data-planner-event="1"
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.effectAllowed = "move";
-                    setDragging(event);
-                  }}
-                  onDragEnd={() => {
-                    setDragging(null);
-                    setDropSlot(null);
-                  }}
-                  style={{
-                    top: `${topPx}px`,
-                    height: `${heightPx}px`,
-                    left: `calc(${left * 100}% + 2px)`,
-                    width: `calc(${width * 100}% - 4px)`,
-                    zIndex: 10,
-                  }}
-                  className={`absolute rounded-md border px-1.5 py-0.5 overflow-hidden group select-none ${cfg.bg} ${cfg.border} ${cfg.text} hover:brightness-110`}
-                >
-                  <p className="text-[11px] font-semibold leading-tight truncate">
-                    {event.title}
-                  </p>
-                  {heightPx > SLOT_HEIGHT * 1.5 && (
-                    <p className="text-[9px] opacity-70 leading-tight font-mono">
-                      {minToTime(event.startMinutes)}–
-                      {minToTime(event.endMinutes)}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteEvent(event.id);
+              {/* Events */}
+              {layoutSlots.map(({ event, left, width }) => {
+                const cfg = SUBJECT_CFG[event.subject];
+                const topPx = (event.startMinutes / 15) * SLOT_HEIGHT;
+                const heightPx = Math.max(
+                  ((event.endMinutes - event.startMinutes) / 15) * SLOT_HEIGHT,
+                  SLOT_HEIGHT,
+                );
+                return (
+                  <div
+                    key={event.id}
+                    data-planner-event="1"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = "move";
+                      setDragging(event);
                     }}
-                    className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-70 hover:!opacity-100 text-current"
-                    data-ocid="dashboard.planner.delete_button"
+                    onDragEnd={() => {
+                      setDragging(null);
+                      setDropSlot(null);
+                    }}
+                    onTouchStart={() => {
+                      setDragging(event);
+                    }}
+                    style={{
+                      top: `${topPx}px`,
+                      height: `${heightPx}px`,
+                      left: `calc(${left * 100}% + 2px)`,
+                      width: `calc(${width * 100}% - 4px)`,
+                      zIndex: 10,
+                      touchAction: "none",
+                    }}
+                    className={`absolute rounded-md border px-1.5 py-0.5 overflow-hidden group select-none ${cfg.bg} ${cfg.border} ${cfg.text} hover:brightness-110`}
                   >
-                    <Trash2 className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-              );
-            })}
+                    <p className="text-[11px] font-semibold leading-tight truncate">
+                      {event.title}
+                    </p>
+                    {heightPx > SLOT_HEIGHT * 1.5 && (
+                      <p className="text-[9px] opacity-70 leading-tight font-mono">
+                        {minToTime(event.startMinutes)}–
+                        {minToTime(event.endMinutes)}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteEvent(event.id);
+                      }}
+                      className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-70 hover:!opacity-100 text-current"
+                      data-ocid="dashboard.planner.delete_button"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
