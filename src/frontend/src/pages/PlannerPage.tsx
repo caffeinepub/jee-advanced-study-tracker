@@ -411,6 +411,7 @@ function MonthCalendar({
                 ${isInRange && !isSelected ? "border-b border-primary/20" : ""}
               `}
               data-ocid={`planner.calendar.item.${day}`}
+              data-touch-date={dateStr}
             >
               <span
                 className={`
@@ -1195,20 +1196,52 @@ export default function PlannerPage() {
     setDropHighlight(null);
   };
 
-  const handleDropToCalendar = (newDate: string) => {
+  const handleDropToCalendar = useCallback((newDate: string) => {
+    setDraggingEvent((current) => {
+      if (!current) return null;
+      setEvents((prev) =>
+        prev.map((e) => (e.id === current.id ? { ...e, date: newDate } : e)),
+      );
+      setSelectedDate(newDate);
+      const [y, m] = newDate.split("-").map(Number);
+      setCalendarYear(y);
+      setCalendarMonth(m - 1);
+      setDropHighlight(null);
+      return null;
+    });
+  }, []);
+
+  // Document-level touch handlers for cross-date drag on mobile
+  useEffect(() => {
     if (!draggingEvent) return;
-    setEvents((prev) =>
-      prev.map((e) =>
-        e.id === draggingEvent.id ? { ...e, date: newDate } : e,
-      ),
-    );
-    setSelectedDate(newDate);
-    const [y, m] = newDate.split("-").map(Number);
-    setCalendarYear(y);
-    setCalendarMonth(m - 1);
-    setDraggingEvent(null);
-    setDropHighlight(null);
-  };
+
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      const dateCell = el?.closest("[data-touch-date]") as HTMLElement | null;
+      if (dateCell?.dataset.touchDate) {
+        setDragOverDate(dateCell.dataset.touchDate);
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      const touch = e.changedTouches[0];
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      const dateCell = el?.closest("[data-touch-date]") as HTMLElement | null;
+      if (dateCell?.dataset.touchDate) {
+        handleDropToCalendar(dateCell.dataset.touchDate);
+      }
+      // If no calendar cell found, DayColumn's own touchend handler will fire
+    };
+
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onTouchEnd);
+    return () => {
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [draggingEvent, handleDropToCalendar]);
 
   // Build list of dates for multi-day view
   const visibleDates = Array.from({ length: dayCount }, (_, i) =>

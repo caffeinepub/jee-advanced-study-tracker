@@ -1,8 +1,22 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, Pause, Play, RotateCcw, Timer, Trophy } from "lucide-react";
+import {
+  Loader2,
+  Minus,
+  Pause,
+  Play,
+  RotateCcw,
+  Square,
+  Timer,
+  Trophy,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import {
+  consumePendingSeconds,
+  useBackgroundTimer,
+} from "../hooks/useBackgroundTimer";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useGetMyTodaySeconds,
@@ -83,13 +97,19 @@ const STUDY_MODES: {
 ];
 
 export default function TimerPage() {
-  const [elapsed, setElapsed] = useState(0);
-  const [running, setRunning] = useState(false);
-  const [studyMode, setStudyMode] = useState<StudyMode>("General");
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Track whether the current session's elapsed time has already been saved to backend
-  // This prevents double-counting when Stop is pressed (saves) and then Reset is pressed (would save again)
-  const sessionSavedRef = useRef(false);
+  const {
+    elapsed,
+    timerState,
+    studyMode,
+    setStudyMode,
+    notifEnabled,
+    start,
+    pause,
+    stop,
+    reset,
+    removeSeconds,
+  } = useBackgroundTimer();
+
   const { identity } = useInternetIdentity();
   const myPrincipal = identity?.getPrincipal().toString();
 
@@ -99,60 +119,66 @@ export default function TimerPage() {
     useGetTodayLeaderboard();
   const recordTime = useRecordStudyTime();
 
-  // Tick the timer
+  // Pending seconds from previous session that closed with timer running
+  const pendingCommittedRef = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run once on mount only
   useEffect(() => {
-    if (running) {
-      intervalRef.current = setInterval(() => {
-        setElapsed((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+    if (pendingCommittedRef.current) return;
+    pendingCommittedRef.current = true;
+    const pending = consumePendingSeconds();
+    if (pending > 0) {
+      recordTime.mutate(BigInt(pending), {
+        onSuccess: () => refetchMyTime(),
+      });
     }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [running]);
+  }, []);
 
-  const handleStartStop = () => {
-    if (running) {
-      // Stop — commit elapsed to backend (only if not already saved)
-      setRunning(false);
-      if (elapsed > 0 && !sessionSavedRef.current) {
-        sessionSavedRef.current = true;
-        recordTime.mutate(BigInt(elapsed), {
-          onSuccess: () => {
-            refetchMyTime();
-          },
-        });
-      }
-    } else {
-      // Starting a new session — reset the saved flag
-      sessionSavedRef.current = false;
-      setRunning(true);
+  // Remove-time UI state
+  const [removeMinutes, setRemoveMinutes] = useState("");
+  const [removeError, setRemoveError] = useState("");
+
+  const handleStart = async () => {
+    await start();
+  };
+
+  const handlePause = () => {
+    pause();
+  };
+
+  const handleStop = () => {
+    const finalElapsed = stop();
+    if (finalElapsed > 0) {
+      recordTime.mutate(BigInt(finalElapsed), {
+        onSuccess: () => refetchMyTime(),
+      });
     }
   };
 
   const handleReset = () => {
-    if (running) {
-      setRunning(false);
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    }
-    // Only record elapsed if it hasn't been saved yet (i.e. user hits Reset without Stopping first)
-    if (elapsed > 0 && !sessionSavedRef.current) {
-      sessionSavedRef.current = true;
-      recordTime.mutate(BigInt(elapsed), {
-        onSuccess: () => {
-          refetchMyTime();
-        },
-      });
-    }
-    // Reset for next session
-    sessionSavedRef.current = false;
-    setElapsed(0);
+    // Reset discards elapsed without committing
+    reset();
   };
 
+  const handleRemoveTime = () => {
+    const mins = Number(removeMinutes);
+    if (!removeMinutes || Number.isNaN(mins) || mins <= 0) {
+      setRemoveError("Enter a valid number of minutes.");
+      return;
+    }
+    if (mins * 60 > elapsed && timerState === "stopped") {
+      setRemoveError("Can't remove more time than elapsed.");
+      return;
+    }
+    setRemoveError("");
+    removeSeconds(mins * 60);
+    setRemoveMinutes("");
+  };
+
+  const running = timerState === "running";
+  const paused = timerState === "paused";
+
   const totalToday =
-    Number(myTodaySeconds ?? BigInt(0)) + (running ? elapsed : 0);
+    Number(myTodaySeconds ?? BigInt(0)) + (running || paused ? elapsed : 0);
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-8">
@@ -162,12 +188,33 @@ export default function TimerPage() {
           <Timer className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Study Timer</h1>
-          <p className="text-xs text-muted-foreground font-mono">
-            Resets at 5:00 AM IST · All users tracked daily
+          <h1 className="text-2xl font-bold text-foreground select-none">
+            Study Timer
+          </h1>
+          <p className="text-xs text-muted-foreground font-mono select-none">
+            Runs in background · Resets at 5:00 AM IST
           </p>
         </div>
+        {notifEnabled && (
+          <span className="ml-auto text-[10px] font-mono text-emerald-400/70 border border-emerald-400/20 rounded-full px-2 py-0.5 select-none">
+            🔔 Notifications on
+          </span>
+        )}
       </div>
+
+      {/* Background notice banner */}
+      {(running || paused) && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl border border-emerald-400/25 bg-emerald-400/5 px-4 py-2.5 flex items-center gap-2 text-xs text-emerald-400/80 font-mono select-none"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          {running
+            ? "Timer is running in the background — closing this tab won't stop it."
+            : "Timer is paused — your progress is saved."}
+        </motion.div>
+      )}
 
       {/* Stopwatch */}
       <motion.div
@@ -177,15 +224,24 @@ export default function TimerPage() {
         className={`rounded-2xl border p-8 text-center transition-colors ${
           running
             ? "bg-emerald-400/5 border-emerald-400/30"
-            : "bg-card border-border"
+            : paused
+              ? "bg-amber-400/5 border-amber-400/30"
+              : "bg-card border-border"
         }`}
       >
         {/* Big time display */}
         <div
           className={`text-7xl md:text-8xl font-mono font-bold tracking-tight leading-none mb-2 select-none transition-colors ${
-            running ? "text-emerald-400" : "text-foreground"
+            running
+              ? "text-emerald-400"
+              : paused
+                ? "text-amber-400"
+                : "text-foreground"
           }`}
-          style={{ fontVariantNumeric: "tabular-nums" }}
+          style={{
+            fontVariantNumeric: "tabular-nums",
+            caretColor: "transparent",
+          }}
           data-ocid="timer.display"
         >
           {formatTime(elapsed)}
@@ -193,14 +249,20 @@ export default function TimerPage() {
 
         <p
           className={`text-sm font-mono mb-4 select-none transition-colors ${
-            running ? "text-emerald-400/70" : "text-muted-foreground"
+            running
+              ? "text-emerald-400/70"
+              : paused
+                ? "text-amber-400/70"
+                : "text-muted-foreground"
           }`}
         >
           {running
             ? `● Recording · ${studyMode}`
-            : elapsed > 0
-              ? `Paused · ${studyMode}`
-              : "Ready"}
+            : paused
+              ? `⏸ Paused · ${studyMode}`
+              : elapsed > 0
+                ? `Stopped · ${studyMode}`
+                : "Ready"}
         </p>
 
         {/* Mode/Subject selector */}
@@ -215,7 +277,8 @@ export default function TimerPage() {
                 key={mode.label}
                 type="button"
                 onClick={() => setStudyMode(mode.label)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+                style={{ caretColor: "transparent" }}
+                className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all select-none ${
                   isActive
                     ? `${mode.bg} ${mode.color} ${mode.border}`
                     : "bg-transparent text-muted-foreground border-border hover:border-muted-foreground/40 hover:text-foreground"
@@ -228,43 +291,104 @@ export default function TimerPage() {
         </div>
 
         {/* Controls */}
-        <div className="flex items-center justify-center gap-4">
-          <Button
-            onClick={handleStartStop}
-            disabled={recordTime.isPending}
-            className={`h-12 px-8 text-base font-semibold rounded-xl transition-all ${
-              running
-                ? "bg-amber-400 hover:bg-amber-500 text-black"
-                : "bg-emerald-400 hover:bg-emerald-500 text-black"
-            }`}
-            data-ocid="timer.primary_button"
-          >
-            {recordTime.isPending ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : running ? (
-              <>
-                <Pause className="w-5 h-5 mr-2" />
-                Stop
-              </>
-            ) : (
-              <>
-                <Play className="w-5 h-5 mr-2" />
-                Start
-              </>
-            )}
-          </Button>
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          {/* Start / Resume */}
+          {!running && (
+            <Button
+              onClick={handleStart}
+              disabled={recordTime.isPending}
+              className="h-12 px-8 text-base font-semibold rounded-xl bg-emerald-400 hover:bg-emerald-500 text-black transition-all"
+              data-ocid="timer.start_button"
+            >
+              <Play className="w-5 h-5 mr-2" />
+              {paused ? "Resume" : "Start"}
+            </Button>
+          )}
 
-          <Button
-            variant="outline"
-            onClick={handleReset}
-            disabled={elapsed === 0 || recordTime.isPending}
-            className="h-12 px-6 text-base rounded-xl border-border text-muted-foreground hover:text-foreground"
-            data-ocid="timer.secondary_button"
-          >
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Reset
-          </Button>
+          {/* Pause (only when running) */}
+          {running && (
+            <Button
+              onClick={handlePause}
+              className="h-12 px-8 text-base font-semibold rounded-xl bg-amber-400 hover:bg-amber-500 text-black transition-all"
+              data-ocid="timer.pause_button"
+            >
+              <Pause className="w-5 h-5 mr-2" />
+              Pause
+            </Button>
+          )}
+
+          {/* Stop — commits to backend */}
+          {(running || paused) && (
+            <Button
+              onClick={handleStop}
+              disabled={recordTime.isPending}
+              variant="outline"
+              className="h-12 px-6 text-base rounded-xl border-red-400/40 text-red-400 hover:bg-red-400/10 hover:text-red-300"
+              data-ocid="timer.stop_button"
+            >
+              {recordTime.isPending ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <>
+                  <Square className="w-4 h-4 mr-2" />
+                  Stop &amp; Save
+                </>
+              )}
+            </Button>
+          )}
+
+          {/* Reset — discards elapsed */}
+          {!running && elapsed > 0 && (
+            <Button
+              variant="outline"
+              onClick={handleReset}
+              disabled={recordTime.isPending}
+              className="h-12 px-6 text-base rounded-xl border-border text-muted-foreground hover:text-foreground"
+              data-ocid="timer.reset_button"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Discard
+            </Button>
+          )}
         </div>
+
+        {/* Remove time */}
+        {(running || paused || elapsed > 0) && (
+          <div className="mt-6 flex items-center justify-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground font-mono select-none">
+              Remove minutes:
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="number"
+                min={1}
+                placeholder="mins"
+                value={removeMinutes}
+                onChange={(e) => {
+                  setRemoveMinutes(e.target.value);
+                  setRemoveError("");
+                }}
+                className="h-7 w-20 text-xs text-center bg-transparent border-border"
+                data-ocid="timer.remove_minutes_input"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRemoveTime}
+                className="h-7 px-3 text-xs border-border text-muted-foreground hover:text-foreground"
+                data-ocid="timer.remove_minutes_button"
+              >
+                <Minus className="w-3 h-3 mr-1" />
+                Remove
+              </Button>
+            </div>
+            {removeError && (
+              <span className="text-[10px] text-red-400 w-full text-center select-none">
+                {removeError}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Today's total */}
         <div className="mt-8 pt-6 border-t border-border">

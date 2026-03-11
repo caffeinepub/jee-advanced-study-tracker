@@ -11,19 +11,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   BookOpen,
   CalendarDays,
+  Check,
   CheckSquare,
   Loader2,
   Pause,
   Play,
   Plus,
   RotateCcw,
+  Square,
   Timer,
   Trash2,
   TrendingUp,
 } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Chapter, Resource, RevisionReminder } from "../backend";
+import type { Chapter, Resource, RevisionReminder, Task } from "../backend";
+import { useBackgroundTimer } from "../hooks/useBackgroundTimer";
 import {
   useCreateTask,
   useGetAllChapters,
@@ -34,6 +37,7 @@ import {
   useRecordStudyTime,
   useUpdateChapterQuestions,
   useUpdateChapterStatus,
+  useUpdateTask,
 } from "../hooks/useQueries";
 import { useGetCallerUserProfile } from "../hooks/useQueries";
 import { Link } from "../hooks/useRouter";
@@ -339,40 +343,28 @@ function QuickAddTaskCard() {
 }
 
 // ── Mini Timer Widget ─────────────────────────────────────────────────────────
+// Uses the shared useBackgroundTimer so it stays in sync with TimerPage
 
 function MiniTimerWidget() {
-  const { data: todaySeconds = BigInt(0) } = useGetMyTodaySeconds();
+  const { data: todaySeconds = BigInt(0), refetch: refetchMyTime } =
+    useGetMyTodaySeconds();
   const recordStudyTime = useRecordStudyTime();
 
-  const [isRunning, setIsRunning] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { elapsed, timerState, start, pause, stop } = useBackgroundTimer();
 
-  useEffect(() => {
-    if (isRunning) {
-      intervalRef.current = setInterval(() => {
-        setElapsed((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isRunning]);
+  const running = timerState === "running";
+  const paused = timerState === "paused";
 
   const handleStop = () => {
-    setIsRunning(false);
-    if (elapsed > 0) {
-      recordStudyTime.mutate(BigInt(elapsed));
-      setElapsed(0);
+    const finalElapsed = stop();
+    if (finalElapsed > 0) {
+      recordStudyTime.mutate(BigInt(finalElapsed), {
+        onSuccess: () => refetchMyTime(),
+      });
     }
   };
 
-  const totalToday = Number(todaySeconds) + (isRunning ? elapsed : 0);
+  const totalToday = Number(todaySeconds) + (running || paused ? elapsed : 0);
 
   return (
     <div className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
@@ -392,40 +384,61 @@ function MiniTimerWidget() {
 
       {/* Today's total */}
       <div className="text-center py-2">
-        <p className="text-xs text-muted-foreground font-mono mb-1">
+        <p className="text-xs text-muted-foreground font-mono mb-1 select-none">
           Today's Study Time
         </p>
-        <p className="text-2xl font-bold font-mono text-emerald-400">
-          {formatSeconds(totalToday)}
+        <p
+          className={`text-2xl font-bold font-mono select-none ${
+            running
+              ? "text-emerald-400"
+              : paused
+                ? "text-amber-400"
+                : "text-foreground"
+          }`}
+        >
+          {formatSeconds(running || paused ? elapsed : totalToday)}
         </p>
-        {isRunning && (
-          <p className="text-xs text-muted-foreground font-mono mt-1">
-            +{formatSeconds(elapsed)} this session
+        {(running || paused) && (
+          <p className="text-xs text-muted-foreground font-mono mt-1 select-none">
+            {running ? "● Running" : "⏸ Paused"} · total today{" "}
+            {formatSeconds(totalToday)}
           </p>
         )}
       </div>
 
       {/* Controls */}
       <div className="flex gap-2">
-        {!isRunning ? (
+        {!running && (
           <Button
             size="sm"
-            onClick={() => setIsRunning(true)}
+            onClick={() => start()}
             className="flex-1 h-8 text-xs bg-emerald-400/15 text-emerald-400 border border-emerald-400/30 hover:bg-emerald-400/25"
-            data-ocid="dashboard.timer.primary_button"
+            data-ocid="dashboard.timer.start_button"
           >
             <Play className="w-3 h-3 mr-1.5 fill-emerald-400" />
-            Start
+            {paused ? "Resume" : "Start"}
           </Button>
-        ) : (
+        )}
+        {running && (
+          <Button
+            size="sm"
+            onClick={pause}
+            className="flex-1 h-8 text-xs bg-amber-400/15 text-amber-400 border border-amber-400/30 hover:bg-amber-400/25"
+            data-ocid="dashboard.timer.pause_button"
+          >
+            <Pause className="w-3 h-3 mr-1.5" />
+            Pause
+          </Button>
+        )}
+        {(running || paused) && (
           <Button
             size="sm"
             onClick={handleStop}
             className="flex-1 h-8 text-xs bg-red-400/15 text-red-400 border border-red-400/30 hover:bg-red-400/25"
-            data-ocid="dashboard.timer.secondary_button"
+            data-ocid="dashboard.timer.stop_button"
           >
-            <Pause className="w-3 h-3 mr-1.5" />
-            Stop & Save
+            <Square className="w-3 h-3 mr-1.5" />
+            Stop &amp; Save
           </Button>
         )}
       </div>
@@ -1070,6 +1083,9 @@ export default function DashboardPage() {
         <MiniTimerWidget />
       </div>
 
+      {/* Todo Checklist */}
+      <TodoChecklistCard tasks={tasks} />
+
       {/* Full Day Planner */}
       <DashboardDayPlanner />
 
@@ -1160,6 +1176,119 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function TodoChecklistCard({ tasks }: { tasks: Task[] }) {
+  const updateTask = useUpdateTask();
+  const pending = tasks.filter((t) => t.status !== "Done");
+  const done = tasks.filter((t) => t.status === "Done").slice(-3);
+  const shownDone = done;
+
+  function toggle(task: Task) {
+    const newStatus = task.status === "Done" ? "Pending" : "Done";
+    updateTask.mutate({
+      taskId: task.id,
+      title: task.title,
+      description: task.description,
+      subjectTag: task.subjectTag,
+      dueDate: task.dueDate ?? null,
+      status: newStatus,
+    });
+  }
+
+  const subjectColor: Record<string, string> = {
+    Physics: "bg-sky-500/20 text-sky-400",
+    Chemistry: "bg-rose-500/20 text-rose-400",
+    Maths: "bg-violet-500/20 text-violet-400",
+    General: "bg-amber-500/20 text-amber-400",
+    Mock: "bg-emerald-500/20 text-emerald-400",
+  };
+
+  function TaskRow({ task, checked }: { task: Task; checked: boolean }) {
+    return (
+      <div className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0 group">
+        <button
+          type="button"
+          onClick={() => toggle(task)}
+          className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors select-none ${
+            checked
+              ? "bg-emerald-500 border-emerald-500"
+              : "border-border hover:border-emerald-400"
+          }`}
+          data-ocid="todo.checkbox"
+          style={{ userSelect: "none", cursor: "pointer" }}
+        >
+          {checked && <Check className="w-3 h-3 text-white" />}
+        </button>
+        <span
+          className={`flex-1 text-sm select-none ${checked ? "line-through opacity-40 text-muted-foreground" : "text-foreground"}`}
+        >
+          {task.title}
+        </span>
+        {task.subjectTag && (
+          <span
+            className={`text-[10px] font-mono px-2 py-0.5 rounded-full select-none ${subjectColor[task.subjectTag] ?? "bg-muted text-muted-foreground"}`}
+          >
+            {task.subjectTag}
+          </span>
+        )}
+        {task.dueDate != null && (
+          <span className="text-[10px] text-muted-foreground font-mono select-none">
+            {new Date(Number(task.dueDate)).toLocaleDateString("en-IN", {
+              month: "short",
+              day: "numeric",
+            })}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <CheckSquare className="w-4 h-4 text-emerald-400" />
+          Tasks
+          {pending.length > 0 && (
+            <span className="ml-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+              {pending.length} pending
+            </span>
+          )}
+        </h2>
+        <Link
+          to="/todo"
+          className="text-xs text-primary hover:underline font-mono select-none"
+          data-ocid="dashboard.tasks.link"
+        >
+          View all →
+        </Link>
+      </div>
+
+      {tasks.length === 0 ? (
+        <div
+          className="text-center py-6 text-muted-foreground text-sm"
+          data-ocid="dashboard.tasks.empty_state"
+        >
+          <CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          <p>No tasks yet</p>
+        </div>
+      ) : (
+        <div>
+          {pending.map((task) => (
+            <TaskRow key={task.id} task={task} checked={false} />
+          ))}
+          {shownDone.length > 0 && (
+            <div className="mt-1">
+              {shownDone.map((task) => (
+                <TaskRow key={task.id} task={task} checked={true} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
