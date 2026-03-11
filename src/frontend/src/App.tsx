@@ -30,16 +30,15 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     isError: profileError,
   } = useGetCallerUserProfile();
 
-  // Timeout fallback: if still loading after 8 seconds, proceed anyway
+  // One-shot 10-second timeout: once fired it never resets, so transient
+  // refetch oscillations cannot keep the loading screen alive indefinitely.
   const [loadingTimedOut, setLoadingTimedOut] = React.useState(false);
   React.useEffect(() => {
-    if (!profileLoading) {
-      setLoadingTimedOut(false);
-      return;
-    }
-    const t = setTimeout(() => setLoadingTimedOut(true), 8000);
+    // Never start a new timer if we already timed out, or if not loading
+    if (loadingTimedOut || !profileLoading) return;
+    const t = setTimeout(() => setLoadingTimedOut(true), 10_000);
     return () => clearTimeout(t);
-  }, [profileLoading]);
+  }, [profileLoading, loadingTimedOut]);
 
   const isAuthenticated = !!identity;
   const showProfileSetup =
@@ -68,7 +67,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return <ProfileSetupPage onComplete={() => {}} />;
   }
 
-  // Show loading only briefly — if timed out or errored, proceed to app
+  // Only block on the loading screen if we haven't timed out or errored
   if (profileLoading && !isFetched && !loadingTimedOut && !profileError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">

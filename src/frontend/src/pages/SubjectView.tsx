@@ -173,8 +173,8 @@ export default function SubjectView({ subject }: SubjectViewProps) {
   const { data: allResources = [], isLoading } = useGetResources();
   const addResource = useAddResource();
   const deleteResource = useDeleteResource();
-  const { actor, isFetching: actorFetching } = useActor();
-  const actorReady = !!actor && !actorFetching;
+  const { actor } = useActor();
+  const actorReady = !!actor;
 
   const [addingResource, setAddingResource] = useState(false);
   const [newResourceName, setNewResourceName] = useState("");

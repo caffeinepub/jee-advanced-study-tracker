@@ -277,8 +277,8 @@ function QuickAddTaskCard() {
   const [subjectTag, setSubjectTag] = useState("General");
   const [addError, setAddError] = useState("");
   const createTask = useCreateTask();
-  const { actor, isFetching: actorFetching } = useActor();
-  const actorReady = !!actor && !actorFetching;
+  const { actor } = useActor();
+  const actorReady = !!actor;
 
   const handleAdd = async () => {
     if (!title.trim()) return;

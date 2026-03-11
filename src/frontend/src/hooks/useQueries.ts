@@ -145,17 +145,24 @@ export function useGetCallerUserProfile() {
       if (!actor) throw new Error("Actor not available");
       return actor.getCallerUserProfile();
     },
-    enabled: !!actor && !actorFetching,
+    // Enable as soon as actor exists — do NOT gate on !actorFetching.
+    // actorFetching can flip back true on background refetches (e.g. window
+    // focus), which would disable this query and cause the loading screen to
+    // persist indefinitely.
+    enabled: !!actor,
     retry: 1,
     retryDelay: 1000,
+    staleTime: 1000 * 60 * 5, // treat profile as fresh for 5 min
   });
 
   return {
     ...query,
-    // isLoading is true only while the actor is fetching AND query hasn't resolved
-    isLoading:
-      (actorFetching && !query.isFetched) || (!!actor && query.isLoading),
-    // isFetched: true once the query has settled (success or error), regardless of actor state
+    // isLoading is true only while we don't yet have the actor OR the query
+    // itself is loading for the first time.
+    isLoading: actorFetching
+      ? !query.isFetched
+      : !!actor && query.isPending && query.isFetching,
+    // isFetched: true once the query has settled (success or error)
     isFetched: query.isFetched || query.isError,
   };
 }
@@ -180,7 +187,7 @@ export function useSaveCallerUserProfile() {
 // ── Resources ─────────────────────────────────────────────────────────────────
 
 export function useGetResources() {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
 
   return useQuery<Resource[]>({
     queryKey: ["resources"],
@@ -188,7 +195,8 @@ export function useGetResources() {
       if (!actor) return [];
       return actor.getResources();
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor,
+    staleTime: 1000 * 60 * 2,
   });
 }
 
@@ -240,7 +248,7 @@ export function useDeleteResource() {
 // ── Chapters ──────────────────────────────────────────────────────────────────
 
 export function useGetAllChapters() {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
 
   return useQuery<Chapter[]>({
     queryKey: ["chapters", "all"],
@@ -248,12 +256,13 @@ export function useGetAllChapters() {
       if (!actor) return [];
       return actor.getAllChapters();
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor,
+    staleTime: 1000 * 60 * 2,
   });
 }
 
 export function useGetChaptersByResource(resourceId: string) {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
 
   return useQuery<Chapter[]>({
     queryKey: ["chapters", resourceId],
@@ -261,7 +270,7 @@ export function useGetChaptersByResource(resourceId: string) {
       if (!actor) return [];
       return actor.getChaptersByResource(resourceId);
     },
-    enabled: !!actor && !isFetching && !!resourceId,
+    enabled: !!actor && !!resourceId,
     staleTime: 1000 * 60 * 5,
   });
 }
@@ -549,7 +558,7 @@ export function useEnsureSubjectChapters() {
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
 export function useGetTasks(filterStatus?: string) {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
 
   return useQuery<Task[]>({
     queryKey: ["tasks", filterStatus ?? "all"],
@@ -557,7 +566,8 @@ export function useGetTasks(filterStatus?: string) {
       if (!actor) return [];
       return actor.getTasks(filterStatus ?? null);
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor,
+    staleTime: 1000 * 30, // 30 sec
   });
 }
 
@@ -639,7 +649,7 @@ export function useDeleteTask() {
 // ── Revision ──────────────────────────────────────────────────────────────────
 
 export function useGetAllRevisionReminders() {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
 
   return useQuery<RevisionReminder[]>({
     queryKey: ["revisionReminders", "all"],
@@ -647,12 +657,13 @@ export function useGetAllRevisionReminders() {
       if (!actor) return [];
       return actor.getAllRevisionReminders();
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor,
+    staleTime: 1000 * 60 * 2,
   });
 }
 
 export function useGetDueForRevision() {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
 
   return useQuery<RevisionReminder[]>({
     queryKey: ["revisionReminders", "due"],
@@ -660,7 +671,7 @@ export function useGetDueForRevision() {
       if (!actor) return [];
       return actor.getDueForRevision();
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor,
     staleTime: 1000 * 60 * 2, // 2 min — changes based on real time
   });
 }
@@ -729,7 +740,7 @@ export function useDeleteRevisionReminder() {
 // ── Study Timer / Leaderboard ─────────────────────────────────────────────────
 
 export function useGetTodayLeaderboard() {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
 
   return useQuery<
     Array<{ totalSeconds: bigint; name: string; principalText: string }>
@@ -739,14 +750,14 @@ export function useGetTodayLeaderboard() {
       if (!actor) return [];
       return actor.getTodayLeaderboard();
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor,
     refetchInterval: 30_000,
     staleTime: 0, // always re-fetch when switching to timer page — data must be fresh
   });
 }
 
 export function useGetMyTodaySeconds() {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
 
   return useQuery<bigint>({
     queryKey: ["studyTime", "today"],
@@ -754,7 +765,7 @@ export function useGetMyTodaySeconds() {
       if (!actor) return BigInt(0);
       return actor.getMyTodaySeconds();
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor,
     staleTime: 0, // timer data must always be fresh
   });
 }
