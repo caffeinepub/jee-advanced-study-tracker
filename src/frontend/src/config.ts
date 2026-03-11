@@ -127,15 +127,10 @@ export async function createActorWithConfig(
 
   const config = await loadConfig();
   const resolvedOptions = options ?? {};
-
-  // Build the agent using the identity from agentOptions (if provided).
-  // We intentionally do NOT spread agentOptions into actorOptions later
-  // to avoid the "both agent and agentOptions" warning from createActor.
   const agent = new HttpAgent({
     ...resolvedOptions.agentOptions,
     host: config.backend_host,
   });
-
   if (config.backend_host?.includes("localhost")) {
     await agent.fetchRootKey().catch((err) => {
       console.warn(
@@ -144,14 +139,9 @@ export async function createActorWithConfig(
       console.error(err);
     });
   }
-
-  // Destructure out agentOptions so it is never forwarded to createActor.
-  // Only `agent` (already built above) should be passed.
-  const { agentOptions: _stripped, ...restOptions } = resolvedOptions;
-
   const actorOptions = {
-    ...restOptions,
-    agent,
+    ...resolvedOptions,
+    agent: agent,
     processError,
   };
 
