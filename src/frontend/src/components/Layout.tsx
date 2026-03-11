@@ -12,7 +12,6 @@ import {
   CheckSquare,
   LayoutDashboard,
   LogOut,
-  RotateCcw,
   Timer,
   Zap,
   ZapOff,
@@ -23,7 +22,6 @@ import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useGetCallerUserProfile } from "../hooks/useQueries";
 import { Link, useLocation } from "../hooks/useRouter";
 import GoalsTrackerBar from "./GoalsTrackerBar";
-import JEECountdownBar from "./JEECountdownBar";
 import RealityModeOverlay from "./RealityModeOverlay";
 
 interface LayoutProps {
@@ -34,7 +32,6 @@ const NAV_ITEMS = [
   { path: "/" as const, label: "Dashboard", icon: LayoutDashboard },
   { path: "/resources" as const, label: "Resources", icon: BookOpen },
   { path: "/todo" as const, label: "Tasks", icon: CheckSquare },
-  { path: "/revision" as const, label: "Revision", icon: RotateCcw },
   { path: "/timer" as const, label: "Timer", icon: Timer },
   { path: "/planner" as const, label: "Planner", icon: CalendarDays },
 ];
@@ -54,14 +51,13 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <TooltipProvider>
       <div className="min-h-screen flex flex-col bg-background">
-        {/* Top bars */}
-        <JEECountdownBar />
+        {/* Chapter goals bar only — JEE countdown bar removed */}
         <GoalsTrackerBar />
 
         {/* Header */}
         <header className="bg-card/80 border-b border-border backdrop-blur-sm sticky top-0 z-40">
           <div className="flex items-center min-h-12 px-4 gap-2 flex-wrap py-1">
-            {/* Nav — icons-only on small screens, labels on md+ */}
+            {/* Nav */}
             <nav className="flex items-center gap-0.5 flex-1 min-w-0">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
@@ -92,14 +88,17 @@ export default function Layout({ children }: LayoutProps) {
 
             {/* Right side */}
             <div className="flex items-center gap-2 shrink-0">
-              {/* Reality Mode */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={toggleRealityMode}
-                    className={`h-8 w-8 ${isRealityModeActive ? "text-red-400 bg-red-400/10" : "text-muted-foreground hover:text-foreground"}`}
+                    className={`h-8 w-8 ${
+                      isRealityModeActive
+                        ? "text-red-400 bg-red-400/10"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
                   >
                     {isRealityModeActive ? (
                       <ZapOff className="w-4 h-4" />
@@ -115,14 +114,12 @@ export default function Layout({ children }: LayoutProps) {
                 </TooltipContent>
               </Tooltip>
 
-              {/* User */}
               {profile && (
                 <span className="text-xs text-muted-foreground font-mono hidden sm:block">
                   {profile.name}
                 </span>
               )}
 
-              {/* Logout */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -163,7 +160,6 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </footer>
 
-        {/* Reality Mode Overlay */}
         <RealityModeOverlay />
       </div>
     </TooltipProvider>

@@ -16,7 +16,6 @@ import LoginPage from "./pages/LoginPage";
 import PlannerPage from "./pages/PlannerPage";
 import ProfileSetupPage from "./pages/ProfileSetupPage";
 import ResourcesPage from "./pages/ResourcesPage";
-import RevisionPage from "./pages/RevisionPage";
 import TimerPage from "./pages/TimerPage";
 import TodoPage from "./pages/TodoPage";
 
@@ -122,12 +121,6 @@ const todoRoute = createRoute({
   component: TodoPage,
 });
 
-const revisionRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/revision",
-  component: RevisionPage,
-});
-
 const timerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/timer",
@@ -144,7 +137,6 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   resourcesRoute,
   todoRoute,
-  revisionRoute,
   timerRoute,
   plannerRoute,
 ]);

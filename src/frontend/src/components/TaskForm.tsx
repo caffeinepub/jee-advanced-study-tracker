@@ -9,9 +9,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, Wifi } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
+import { useActor } from "../hooks/useActor";
 import { useCreateTask } from "../hooks/useQueries";
 
 const SUBJECT_OPTIONS = ["Physics", "Chemistry", "Maths", "General"] as const;
@@ -30,10 +31,12 @@ export default function TaskForm({ onClose }: TaskFormProps) {
   const [dueDate, setDueDate] = useState(todayStr);
 
   const createTask = useCreateTask();
+  const { actor, isFetching: actorFetching } = useActor();
+  const actorReady = !!actor && !actorFetching;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !actorReady) return;
 
     const dueDateBigInt = dueDate
       ? BigInt(new Date(dueDate).getTime()) * BigInt(1_000_000)
@@ -51,6 +54,12 @@ export default function TaskForm({ onClose }: TaskFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {!actorReady && (
+        <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-md px-3 py-2">
+          <Wifi className="w-3.5 h-3.5 animate-pulse" />
+          Connecting to backend...
+        </div>
+      )}
       <div>
         <Label
           htmlFor="task-title"
@@ -132,8 +141,9 @@ export default function TaskForm({ onClose }: TaskFormProps) {
         </Button>
         <Button
           type="submit"
-          disabled={!title.trim() || createTask.isPending}
+          disabled={!title.trim() || createTask.isPending || !actorReady}
           className="bg-primary text-primary-foreground"
+          data-ocid="todo.add_button"
         >
           {createTask.isPending ? (
             <>

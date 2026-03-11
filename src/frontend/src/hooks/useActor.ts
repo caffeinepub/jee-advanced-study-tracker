@@ -32,7 +32,9 @@ export function useActor() {
     },
     // Only refetch when identity changes
     staleTime: Number.POSITIVE_INFINITY,
-    // This will cause the actor to be recreated when the identity changes
+    // Retry a few times in case of transient network issues
+    retry: 3,
+    retryDelay: 2000,
     enabled: true,
   });
 
@@ -55,5 +57,6 @@ export function useActor() {
   return {
     actor: actorQuery.data || null,
     isFetching: actorQuery.isFetching,
+    isLoading: actorQuery.isLoading || actorQuery.isFetching,
   };
 }

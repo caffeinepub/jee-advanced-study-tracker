@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import React, { useState } from "react";
 import type { Chapter, Resource } from "../backend";
+import { useActor } from "../hooks/useActor";
 import {
   useAddChapter,
   useDeleteChapter,
@@ -191,9 +192,10 @@ export default function ChapterList({
   const [newChapterTotalQ, setNewChapterTotalQ] = useState("");
   const [newChapterDoneQ, setNewChapterDoneQ] = useState("");
 
-  const { data: chapters = [], isLoading } = useGetChaptersByResource(
-    resource.id,
-  );
+  const { data: chapters = [], isLoading: chaptersLoading } =
+    useGetChaptersByResource(resource.id);
+  const { isFetching: actorFetching, actor } = useActor();
+  const isLoading = chaptersLoading && (actorFetching || !actor);
   const updateStatus = useUpdateChapterStatus();
   const deleteChapter = useDeleteChapter();
   const addChapter = useAddChapter();

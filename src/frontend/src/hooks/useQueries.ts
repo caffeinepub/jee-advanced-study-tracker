@@ -165,6 +165,8 @@ export function useSaveCallerUserProfile() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (profile: UserProfile) => {
       if (!actor) throw new Error("Actor not available");
       return actor.saveCallerUserProfile(profile);
@@ -195,6 +197,8 @@ export function useAddResource() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (params: {
       id: string;
       name: string;
@@ -220,6 +224,8 @@ export function useDeleteResource() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
       return actor.deleteResource(id);
@@ -265,6 +271,8 @@ export function useAddChapter() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (params: {
       id: string;
       resourceId: string;
@@ -295,6 +303,8 @@ export function useUpdateChapterQuestions() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (params: {
       chapterId: string;
       doneQuestions: bigint;
@@ -385,6 +395,8 @@ export function useUpdateChapterStatus() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (params: {
       chapterId: string;
       status: string;
@@ -468,6 +480,8 @@ export function useDeleteChapter() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (params: { chapterId: string; resourceId: string }) => {
       if (!actor) throw new Error("Actor not available");
       return actor.deleteChapter(params.chapterId);
@@ -492,6 +506,8 @@ export function useEnsureSubjectChapters() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (params: {
       resourceId: string;
       subject: string;
@@ -550,6 +566,8 @@ export function useCreateTask() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (params: {
       title: string;
       description: string;
@@ -575,6 +593,8 @@ export function useUpdateTask() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (params: {
       taskId: string;
       title: string;
@@ -604,6 +624,8 @@ export function useDeleteTask() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (taskId: string) => {
       if (!actor) throw new Error("Actor not available");
       return actor.deleteTask(taskId);
@@ -648,6 +670,8 @@ export function useAddRevisionReminder() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (params: {
       id: string;
       resourceId: string;
@@ -673,6 +697,8 @@ export function useMarkRevisionComplete() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (reminderId: string) => {
       if (!actor) throw new Error("Actor not available");
       return actor.markRevisionComplete(reminderId);
@@ -688,6 +714,8 @@ export function useDeleteRevisionReminder() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (reminderId: string) => {
       if (!actor) throw new Error("Actor not available");
       return actor.deleteRevisionReminder(reminderId);
@@ -736,6 +764,8 @@ export function useRecordStudyTime() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: 2,
+    retryDelay: 1500,
     mutationFn: async (seconds: bigint) => {
       if (!actor) throw new Error("Actor not available");
       return actor.recordStudyTime(seconds);

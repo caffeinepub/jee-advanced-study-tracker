@@ -13,6 +13,7 @@ import {
   CalendarDays,
   Check,
   CheckSquare,
+  GripVertical,
   Loader2,
   Pause,
   Play,
@@ -26,6 +27,7 @@ import {
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chapter, Resource, RevisionReminder, Task } from "../backend";
+import { useActor } from "../hooks/useActor";
 import { useBackgroundTimer } from "../hooks/useBackgroundTimer";
 import {
   useCreateTask,
@@ -273,20 +275,29 @@ function CurrentlyDoingCard({
 function QuickAddTaskCard() {
   const [title, setTitle] = useState("");
   const [subjectTag, setSubjectTag] = useState("General");
+  const [addError, setAddError] = useState("");
   const createTask = useCreateTask();
+  const { actor, isFetching: actorFetching } = useActor();
+  const actorReady = !!actor && !actorFetching;
 
   const handleAdd = async () => {
     if (!title.trim()) return;
-    const todayStr = getTodayStr();
-    const dueDateBigInt =
-      BigInt(new Date(todayStr).getTime()) * BigInt(1_000_000);
-    await createTask.mutateAsync({
-      title: title.trim(),
-      description: "",
-      subjectTag,
-      dueDate: dueDateBigInt,
-    });
-    setTitle("");
+    setAddError("");
+    try {
+      const todayStr = getTodayStr();
+      const dueDateBigInt =
+        BigInt(new Date(todayStr).getTime()) * BigInt(1_000_000);
+      await createTask.mutateAsync({
+        title: title.trim(),
+        description: "",
+        subjectTag,
+        dueDate: dueDateBigInt,
+      });
+      setTitle("");
+    } catch (err) {
+      console.error("Failed to add task:", err);
+      setAddError("Failed to add task. Please try again.");
+    }
   };
 
   return (
@@ -298,13 +309,16 @@ function QuickAddTaskCard() {
       <div className="flex items-center gap-2">
         <Input
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            if (addError) setAddError("");
+          }}
           placeholder="Task title..."
           className="flex-1 h-8 text-xs bg-input border-border"
           onKeyDown={(e) => {
             if (e.key === "Enter") handleAdd();
           }}
-          data-ocid="dashboard.quick-add-task.input"
+          data-ocid="todo.input"
         />
         <Select value={subjectTag} onValueChange={setSubjectTag}>
           <SelectTrigger
@@ -324,20 +338,29 @@ function QuickAddTaskCard() {
         <Button
           size="sm"
           onClick={handleAdd}
-          disabled={!title.trim() || createTask.isPending}
+          disabled={!title.trim() || createTask.isPending || !actorReady}
           className="h-8 px-3 bg-primary text-primary-foreground text-xs shrink-0"
-          data-ocid="dashboard.quick-add-task.submit_button"
+          data-ocid="todo.add_button"
         >
-          {createTask.isPending ? (
+          {createTask.isPending || !actorReady ? (
             <Loader2 className="w-3 h-3 animate-spin" />
           ) : (
             "Add"
           )}
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground mt-1.5">
-        Added with today's date automatically
-      </p>
+      {addError ? (
+        <p
+          className="text-xs text-red-400 mt-1.5"
+          data-ocid="dashboard.quick-add-task.error_state"
+        >
+          {addError}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground mt-1.5">
+          Added with today's date automatically
+        </p>
+      )}
     </div>
   );
 }
@@ -1100,7 +1123,7 @@ export default function DashboardPage() {
             Due for Revision
           </h2>
           <Link
-            to="/revision"
+            to="/todo"
             className="text-xs text-primary hover:underline font-mono"
             data-ocid="dashboard.revision.link"
           >
@@ -1180,11 +1203,40 @@ export default function DashboardPage() {
   );
 }
 
+// ── Due date helpers ───────────────────────────────────────────────────────────
+function getDueDateStatus(task: Task): "overdue" | "today" | "future" | "none" {
+  if (task.dueDate == null || task.status === "Done") return "none";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDate = new Date(Number(task.dueDate) / 1_000_000);
+  dueDate.setHours(0, 0, 0, 0);
+  if (dueDate < today) return "overdue";
+  if (dueDate.getTime() === today.getTime()) return "today";
+  return "future";
+}
+
+// ── Todo Checklist Card ────────────────────────────────────────────────────────
 function TodoChecklistCard({ tasks }: { tasks: Task[] }) {
   const updateTask = useUpdateTask();
   const pending = tasks.filter((t) => t.status !== "Done");
   const done = tasks.filter((t) => t.status === "Done").slice(-3);
-  const shownDone = done;
+
+  // Local reorder state for pending tasks (drag-to-reorder)
+  const [orderedPending, setOrderedPending] = useState<Task[]>(pending);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  // Sync orderedPending when upstream tasks change (new tasks added, tasks completed, etc.)
+  useEffect(() => {
+    setOrderedPending((prev) => {
+      // Keep existing order, add new tasks at the end, remove completed
+      const pendingIds = new Set(pending.map((t) => t.id));
+      const prevFiltered = prev.filter((t) => pendingIds.has(t.id));
+      const prevIds = new Set(prevFiltered.map((t) => t.id));
+      const newTasks = pending.filter((t) => !prevIds.has(t.id));
+      return [...prevFiltered, ...newTasks];
+    });
+  }, [pending]);
 
   function toggle(task: Task) {
     const newStatus = task.status === "Done" ? "Pending" : "Done";
@@ -1206,9 +1258,66 @@ function TodoChecklistCard({ tasks }: { tasks: Task[] }) {
     Mock: "bg-emerald-500/20 text-emerald-400",
   };
 
-  function TaskRow({ task, checked }: { task: Task; checked: boolean }) {
+  function TaskRow({
+    task,
+    checked,
+    index,
+  }: {
+    task: Task;
+    checked: boolean;
+    index: number;
+  }) {
+    const dueDateStatus = getDueDateStatus(task);
+    const dueDateColorClass =
+      dueDateStatus === "overdue"
+        ? "text-red-400"
+        : dueDateStatus === "today"
+          ? "text-amber-400"
+          : "text-muted-foreground";
+
+    const isDraggingThis = dragIdx === index;
+    const isDragOver = dragOverIdx === index;
+
     return (
-      <div className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0 group">
+      <div
+        className={`flex items-center gap-2 py-2 border-b border-border/40 last:border-0 group transition-all ${
+          isDraggingThis ? "opacity-40" : ""
+        } ${isDragOver && dragIdx !== index ? "border-t-2 border-t-primary/60" : ""}`}
+        draggable={!checked}
+        onDragStart={() => {
+          if (!checked) setDragIdx(index);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!checked && dragIdx !== null) setDragOverIdx(index);
+        }}
+        onDragLeave={() => setDragOverIdx(null)}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (dragIdx === null || dragIdx === index) {
+            setDragOverIdx(null);
+            return;
+          }
+          setOrderedPending((prev) => {
+            const next = [...prev];
+            const [moved] = next.splice(dragIdx, 1);
+            next.splice(index, 0, moved);
+            return next;
+          });
+          setDragIdx(null);
+          setDragOverIdx(null);
+        }}
+        onDragEnd={() => {
+          setDragIdx(null);
+          setDragOverIdx(null);
+        }}
+      >
+        {!checked && (
+          <GripVertical
+            className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-muted-foreground/70 shrink-0 cursor-grab active:cursor-grabbing transition-colors"
+            data-ocid={`todo.drag_handle.${index + 1}`}
+          />
+        )}
         <button
           type="button"
           onClick={() => toggle(task)}
@@ -1217,29 +1326,45 @@ function TodoChecklistCard({ tasks }: { tasks: Task[] }) {
               ? "bg-emerald-500 border-emerald-500"
               : "border-border hover:border-emerald-400"
           }`}
-          data-ocid="todo.checkbox"
+          data-ocid={`todo.checkbox.${index + 1}`}
           style={{ userSelect: "none", cursor: "pointer" }}
         >
           {checked && <Check className="w-3 h-3 text-white" />}
         </button>
         <span
-          className={`flex-1 text-sm select-none ${checked ? "line-through opacity-40 text-muted-foreground" : "text-foreground"}`}
+          className={`flex-1 text-sm select-none ${
+            checked
+              ? "line-through opacity-40 text-muted-foreground"
+              : "text-foreground"
+          }`}
         >
           {task.title}
         </span>
         {task.subjectTag && (
           <span
-            className={`text-[10px] font-mono px-2 py-0.5 rounded-full select-none ${subjectColor[task.subjectTag] ?? "bg-muted text-muted-foreground"}`}
+            className={`text-[10px] font-mono px-2 py-0.5 rounded-full select-none ${
+              subjectColor[task.subjectTag] ?? "bg-muted text-muted-foreground"
+            }`}
           >
             {task.subjectTag}
           </span>
         )}
         {task.dueDate != null && (
-          <span className="text-[10px] text-muted-foreground font-mono select-none">
-            {new Date(Number(task.dueDate)).toLocaleDateString("en-IN", {
-              month: "short",
-              day: "numeric",
-            })}
+          <span
+            className={`text-[10px] font-mono select-none flex items-center gap-0.5 ${
+              dueDateColorClass
+            }`}
+          >
+            {dueDateStatus === "overdue" && (
+              <span className="text-red-400">!</span>
+            )}
+            {new Date(Number(task.dueDate) / 1_000_000).toLocaleDateString(
+              "en-IN",
+              {
+                month: "short",
+                day: "numeric",
+              },
+            )}
           </span>
         )}
       </div>
@@ -1252,9 +1377,9 @@ function TodoChecklistCard({ tasks }: { tasks: Task[] }) {
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <CheckSquare className="w-4 h-4 text-emerald-400" />
           Tasks
-          {pending.length > 0 && (
+          {orderedPending.length > 0 && (
             <span className="ml-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
-              {pending.length} pending
+              {orderedPending.length} pending
             </span>
           )}
         </h2>
@@ -1277,13 +1402,18 @@ function TodoChecklistCard({ tasks }: { tasks: Task[] }) {
         </div>
       ) : (
         <div>
-          {pending.map((task) => (
-            <TaskRow key={task.id} task={task} checked={false} />
+          {orderedPending.map((task, i) => (
+            <TaskRow key={task.id} task={task} checked={false} index={i} />
           ))}
-          {shownDone.length > 0 && (
+          {done.length > 0 && (
             <div className="mt-1">
-              {shownDone.map((task) => (
-                <TaskRow key={task.id} task={task} checked={true} />
+              {done.map((task, i) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  checked={true}
+                  index={orderedPending.length + i}
+                />
               ))}
             </div>
           )}

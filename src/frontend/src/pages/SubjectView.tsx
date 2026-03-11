@@ -90,13 +90,20 @@ function ResourceWithSeeding({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: ensureChapters intentionally excluded to run only once
   useEffect(() => {
-    // Use global set to prevent re-seeding when component remounts (e.g. tab switch)
+    // Only seed resources that were JUST added this session (key in globalChemSubsets for Chemistry,
+    // or no chapters yet for other subjects). This prevents page-reload re-seeding which would
+    // add ALL chapters to resources that were originally created with a subset (e.g. Organic only).
+    const isNewResource = globalChemSubsets.has(resource.id);
+    const hasNoChapters = _chapters.length === 0;
+    const shouldSeed = subject === "Chemistry" ? isNewResource : hasNoChapters;
+
     if (
       !actor ||
       !isFetched ||
       seedingRef.current ||
       globalSeededResources.has(resource.id) ||
-      ensureChapters.isPending
+      ensureChapters.isPending ||
+      !shouldSeed
     )
       return;
     seedingRef.current = true;
@@ -112,7 +119,7 @@ function ResourceWithSeeding({
         },
       },
     );
-  }, [actor, isFetched, resource.id, subject]);
+  }, [actor, isFetched, resource.id, subject, _chapters.length]);
 
   return (
     <div className="relative group/resource">
@@ -166,6 +173,8 @@ export default function SubjectView({ subject }: SubjectViewProps) {
   const { data: allResources = [], isLoading } = useGetResources();
   const addResource = useAddResource();
   const deleteResource = useDeleteResource();
+  const { actor, isFetching: actorFetching } = useActor();
+  const actorReady = !!actor && !actorFetching;
 
   const [addingResource, setAddingResource] = useState(false);
   const [newResourceName, setNewResourceName] = useState("");
@@ -323,7 +332,11 @@ export default function SubjectView({ subject }: SubjectViewProps) {
                 <Button
                   size="sm"
                   onClick={handleAddResource}
-                  disabled={!newResourceName.trim() || addResource.isPending}
+                  disabled={
+                    !newResourceName.trim() ||
+                    addResource.isPending ||
+                    !actorReady
+                  }
                   className="bg-primary text-primary-foreground"
                   data-ocid="resources.resource.submit_button"
                 >
